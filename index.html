@@ -145,6 +145,7 @@
         .time-buttons {
             display: flex;
             gap: 10px;
+            margin-bottom: 20px;
         }
         
         .time-btn {
@@ -313,7 +314,7 @@
                 <span style="font-size: 2.5rem;">🎵</span>
                 <h1>Your Stats</h1>
             </div>
-            <div style="display: flex; gap: 20px; align-items: center;">
+            <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap;">
                 <div class="user-info" id="userInfo"></div>
                 <button class="logout-btn" onclick="logout()">Logout</button>
             </div>
@@ -325,7 +326,7 @@
             <button class="time-btn" onclick="changeTimeRange('long_term', this)">All Time</button>
         </div>
 
-        <div class="stats-grid" style="margin-top: 30px;">
+        <div class="stats-grid">
             <div class="stat-card">
                 <h3>🎵 Total Tracks</h3>
                 <div class="value" id="totalTracks">-</div>
@@ -365,27 +366,92 @@
         let accessToken = null;
         let currentTimeRange = 'short_term';
 
+        // PKCE helper functions
+        function generateRandomString(length) {
+            const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            const values = crypto.getRandomValues(new Uint8Array(length));
+            return values.reduce((acc, x) => acc + possible[x % possible.length], "");
+        }
+
+        async function sha256(plain) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(plain);
+            return window.crypto.subtle.digest('SHA-256', data);
+        }
+
+        function base64encode(input) {
+            return btoa(String.fromCharCode(...new Uint8Array(input)))
+                .replace(/=/g, '')
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_');
+        }
+
         // Check if returning from Spotify auth
-        window.addEventListener('load', () => {
-            const hash = window.location.hash.substring(1);
-            const params = new URLSearchParams(hash);
-            const token = params.get('access_token');
+        window.addEventListener('load', async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
             
-            if (token) {
-                accessToken = token;
-                window.location.hash = '';
+            if (code) {
                 showLoading();
-                loadUserData();
+                const verifier = localStorage.getItem('verifier');
+                
+                try {
+                    const token = await getAccessToken(code, verifier);
+                    accessToken = token;
+                    localStorage.removeItem('verifier');
+                    window.history.replaceState({}, document.title, "/spotify-stats-test/");
+                    await loadUserData();
+                } catch (error) {
+                    console.error('Error getting token:', error);
+                    alert('Authentication failed. Please try again.');
+                    logout();
+                }
             }
         });
 
-        function loginWithSpotify() {
-            const authUrl = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`;
-            window.location.href = authUrl;
+        async function loginWithSpotify() {
+            const verifier = generateRandomString(64);
+            const hashed = await sha256(verifier);
+            const challenge = base64encode(hashed);
+            
+            localStorage.setItem('verifier', verifier);
+            
+            const authUrl = new URL('https://accounts.spotify.com/authorize');
+            const params = {
+                client_id: CLIENT_ID,
+                response_type: 'code',
+                redirect_uri: REDIRECT_URI,
+                scope: SCOPES,
+                code_challenge_method: 'S256',
+                code_challenge: challenge,
+            };
+            
+            authUrl.search = new URLSearchParams(params).toString();
+            window.location.href = authUrl.toString();
+        }
+
+        async function getAccessToken(code, verifier) {
+            const response = await fetch('https://accounts.spotify.com/api/token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    client_id: CLIENT_ID,
+                    grant_type: 'authorization_code',
+                    code: code,
+                    redirect_uri: REDIRECT_URI,
+                    code_verifier: verifier,
+                }),
+            });
+            
+            const data = await response.json();
+            return data.access_token;
         }
 
         function logout() {
             accessToken = null;
+            localStorage.removeItem('verifier');
             document.getElementById('dashboard').classList.remove('active');
             document.getElementById('loginScreen').classList.remove('hidden');
         }
@@ -411,7 +477,6 @@
 
         async function loadUserData() {
             try {
-                // Get user profile
                 const profile = await fetchSpotify('/me');
                 document.getElementById('userInfo').innerHTML = `
                     ${profile.images && profile.images[0] ? 
@@ -420,7 +485,6 @@
                     <span>${profile.display_name}</span>
                 `;
 
-                // Load stats
                 await loadStats(currentTimeRange);
                 showDashboard();
             } catch (error) {
@@ -432,17 +496,12 @@
 
         async function loadStats(timeRange) {
             try {
-                // Get top tracks
                 const tracks = await fetchSpotify(`/me/top/tracks?time_range=${timeRange}&limit=50`);
-                
-                // Get top artists
                 const artists = await fetchSpotify(`/me/top/artists?time_range=${timeRange}&limit=50`);
 
-                // Update stats
                 document.getElementById('totalTracks').textContent = tracks.items.length;
                 document.getElementById('totalArtists').textContent = artists.items.length;
                 
-                // Get top genre
                 const genres = {};
                 artists.items.forEach(artist => {
                     artist.genres.forEach(genre => {
@@ -454,7 +513,6 @@
                 
                 document.getElementById('mostPlayed').textContent = tracks.items[0]?.name.substring(0, 15) + '...' || 'N/A';
 
-                // Display top tracks
                 const tracksHtml = tracks.items.slice(0, 10).map((track, i) => `
                     <div class="item">
                         <div class="rank">${i + 1}</div>
@@ -467,7 +525,6 @@
                 `).join('');
                 document.getElementById('topTracks').innerHTML = tracksHtml;
 
-                // Display top artists
                 const artistsHtml = artists.items.slice(0, 10).map((artist, i) => `
                     <div class="item">
                         <div class="rank">${i + 1}</div>
