@@ -261,6 +261,12 @@
             color: #1DB954;
         }
         
+        .stat-card .subvalue {
+            font-size: 0.9rem;
+            color: #b3b3b3;
+            margin-top: 5px;
+        }
+        
         .content-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
@@ -275,7 +281,31 @@
         
         .section h2 {
             font-size: 1.8rem;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
+        }
+        
+        .items-container {
+            max-height: 600px;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        
+        .items-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .items-container::-webkit-scrollbar-track {
+            background: #1a1a1a;
+            border-radius: 10px;
+        }
+        
+        .items-container::-webkit-scrollbar-thumb {
+            background: #282828;
+            border-radius: 10px;
+        }
+        
+        .items-container::-webkit-scrollbar-thumb:hover {
+            background: #1DB954;
         }
         
         .item {
@@ -438,32 +468,35 @@
 
         <div class="stats-grid">
             <div class="stat-card">
-                <h3>🎵 Total Tracks</h3>
-                <div class="value" id="totalTracks">-</div>
-            </div>
-            <div class="stat-card">
-                <h3>👥 Total Artists</h3>
-                <div class="value" id="totalArtists">-</div>
-            </div>
-            <div class="stat-card">
                 <h3>📈 Top Genre</h3>
                 <div class="value" id="topGenre">-</div>
             </div>
             <div class="stat-card">
-                <h3>🔥 Most Played</h3>
+                <h3>🔥 #1 Track</h3>
                 <div class="value" id="mostPlayed">-</div>
+                <div class="subvalue" id="mostPlayedArtist">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>⭐ #1 Artist</h3>
+                <div class="value" id="topArtist">-</div>
+                <div class="subvalue" id="topArtistGenre">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>🎯 Avg Popularity</h3>
+                <div class="value" id="avgPopularity">-</div>
+                <div class="subvalue">Out of 100</div>
             </div>
         </div>
 
         <div class="content-grid">
             <div class="section">
                 <h2>🎵 Top Tracks</h2>
-                <div id="topTracks"></div>
+                <div class="items-container" id="topTracks"></div>
             </div>
 
             <div class="section">
                 <h2>👥 Top Artists</h2>
-                <div id="topArtists"></div>
+                <div class="items-container" id="topArtists"></div>
             </div>
         </div>
     </div>
@@ -634,9 +667,11 @@
                 const tracks = await fetchSpotify(`/me/top/tracks?time_range=${timeRange}&limit=50`);
                 const artists = await fetchSpotify(`/me/top/artists?time_range=${timeRange}&limit=50`);
 
-                document.getElementById('totalTracks').textContent = tracks.items.length;
-                document.getElementById('totalArtists').textContent = artists.items.length;
+                // Calculate average popularity
+                const avgPop = Math.round(tracks.items.reduce((sum, t) => sum + t.popularity, 0) / tracks.items.length);
+                document.getElementById('avgPopularity').textContent = avgPop;
                 
+                // Top genre
                 const genres = {};
                 artists.items.forEach(artist => {
                     artist.genres.forEach(genre => {
@@ -646,9 +681,16 @@
                 const topGenre = Object.entries(genres).sort((a, b) => b[1] - a[1])[0];
                 document.getElementById('topGenre').textContent = topGenre ? topGenre[0] : 'N/A';
                 
-                document.getElementById('mostPlayed').textContent = tracks.items[0]?.name.substring(0, 15) + '...' || 'N/A';
+                // Most played track
+                document.getElementById('mostPlayed').textContent = tracks.items[0]?.name || 'N/A';
+                document.getElementById('mostPlayedArtist').textContent = tracks.items[0]?.artists[0].name || '';
+                
+                // Top artist
+                document.getElementById('topArtist').textContent = artists.items[0]?.name || 'N/A';
+                document.getElementById('topArtistGenre').textContent = artists.items[0]?.genres[0] || '';
 
-                const tracksHtml = tracks.items.slice(0, 10).map((track, i) => `
+                // Display top 25 tracks
+                const tracksHtml = tracks.items.slice(0, 25).map((track, i) => `
                     <div class="item">
                         <div class="rank">${i + 1}</div>
                         <img src="${track.album.images[2]?.url || ''}" class="item-image" alt="${track.name}">
@@ -660,7 +702,8 @@
                 `).join('');
                 document.getElementById('topTracks').innerHTML = tracksHtml;
 
-                const artistsHtml = artists.items.slice(0, 10).map((artist, i) => `
+                // Display top 25 artists
+                const artistsHtml = artists.items.slice(0, 25).map((artist, i) => `
                     <div class="item">
                         <div class="rank">${i + 1}</div>
                         <img src="${artist.images[2]?.url || ''}" class="item-image round" alt="${artist.name}">
