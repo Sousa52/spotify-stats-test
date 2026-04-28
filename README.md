@@ -4,3 +4,5 @@ A website where you can get insights on the music you´ve been listening to for 
 No login token is saved and after you leave the website you will be automatically disconnected.
 
 Feel free to contact me via github and give me feedback.
+
+-Update, unfortunately the project has come to an end due to the new spotify for developers policy.-
